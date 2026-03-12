@@ -369,8 +369,10 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 ETF Screener v2 running at http://localhost:${PORT}`);
   console.log(`   RAM: ~${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB`);
-  // Pre-warm categories cache
-  scrapeCategories().catch(err => console.warn('Category pre-warm failed:', err.message));
+  // Pre-warm categories cache after a short delay so the server binds the port and responds to health checks immediately
+  setTimeout(() => {
+    scrapeCategories().catch(err => console.warn('Category pre-warm failed:', err.message));
+  }, 5000);
 });
 
 process.on('SIGTERM', () => {
