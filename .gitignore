@@ -1,0 +1,4 @@
+node_modules/
+.env
+debug*.mjs
+.DS_Store

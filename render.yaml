@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: etf-screener
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
