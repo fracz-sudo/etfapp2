@@ -15,9 +15,11 @@ const summaryTableBody = document.getElementById('summaryTableBody');
 
 const backBtn = document.getElementById('backBtn');
 const clearCacheBtn = document.getElementById('clearCacheBtn');
+const exportCsvBtn = document.getElementById('exportCsvBtn');
 
 let currentCategoryUrl = null;
 let currentCategoryName = null;
+let currentEtfs = [];
 
 // ─── Init ───────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', loadCategories);
@@ -26,6 +28,7 @@ retryResults.addEventListener('click', () => {
 });
 backBtn.addEventListener('click', showCategories);
 clearCacheBtn.addEventListener('click', clearCache);
+if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportToCsv);
 
 // ─── Load & Render Categories ───────────────────────────────────
 async function loadCategories() {
@@ -129,9 +132,11 @@ async function loadETFs(url, name) {
           <p class="loading-text" style="color: var(--text-secondary);">V této kategorii nebyly nalezeny žádné ETF fondy.</p>
         </div>
       `;
+      currentEtfs = [];
       return;
     }
 
+    currentEtfs = json.data;
     renderETFs(json.data);
   } catch (err) {
     resultsLoading.style.display = 'none';
@@ -249,6 +254,50 @@ async function clearCache() {
   } catch {
     // silently fail
   }
+}
+
+// ─── Export CSV ───────────────────────────────────────────────────
+function exportToCsv() {
+  if (!currentEtfs || currentEtfs.length === 0) return;
+
+  const headers = ['Název', 'ISIN', 'Měna fondu', 'TER', 'AUM (mil. EUR)', 'Distribuce výnosů', 'Replikační metoda'];
+  const rows = currentEtfs.map(etf => {
+    return [
+      escapeCsv(etf.name || 'N/A'),
+      escapeCsv(etf.isin || ''),
+      escapeCsv(etf.currency || 'N/A'),
+      escapeCsv(etf.ter || 'N/A'),
+      escapeCsv(etf.aum || 'N/A'),
+      escapeCsv(etf.distribution || 'N/A'),
+      escapeCsv(etf.replication || 'N/A')
+    ].join(';');
+  });
+
+  // Skutečný BOM (\uFEFF) a správné nové řádky pro Windows/Excel (\r\n)
+  const csvContent = "\uFEFF" + [headers.join(';'), ...rows].join('\r\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  
+  const safeName = (currentCategoryName || 'etf_list').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${safeName}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function escapeCsv(str) {
+  if (str === null || str === undefined) return '""';
+  const stringified = String(str);
+  // Pokud obsahuje středníky, uvozovky nebo konce řádků, obalit do uvozovek
+  if (stringified.includes(';') || stringified.includes('"') || stringified.includes('\n')) {
+    return '"' + stringified.replace(/"/g, '""') + '"';
+  }
+  return stringified;
 }
 
 // ─── Utilities ──────────────────────────────────────────────────
