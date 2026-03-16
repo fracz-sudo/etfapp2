@@ -117,8 +117,8 @@ async function scrapeCategories() {
 }
 
 // ─── Scrape ETF list from guide page ────────────────────────────
-async function scrapeETFListFromGuidePage(guideUrl) {
-  const cacheKey = `list:${guideUrl}`;
+async function scrapeETFListFromGuidePage(guideUrl, limitAmount) {
+  const cacheKey = `list:${guideUrl}:${limitAmount}`;
   const cached = getCached(cacheKey);
   if (cached) return cached;
 
@@ -127,9 +127,22 @@ async function scrapeETFListFromGuidePage(guideUrl) {
   const $ = cheerio.load(html);
 
   const etfs = [];
+  const seenIsins = new Set();
 
-  // Parse any table row that contains an ISIN link
-  $('table tbody tr').each((i, row) => {
+  // Find ONLY the primary overview table. Let's locate the first table on the page
+  // and exclusively get its rows.
+  // justETF uses either 'dt-etf-param' (topics) or 'dt-etf-param-region' (regions) for the overview table.
+  const $overviewTable = $('table[class*="dt-etf-param"]').first();
+  if (!$overviewTable.length) {
+    console.warn(`No main ETF table found for ${guideUrl}`);
+  }
+
+  // Parse only rows from this specific first table
+  let foundRows = 0;
+  $overviewTable.children('tbody').first().children('tr').each((i, row) => {
+    // Ukončit hledání pokud jsme už našli 20 položek, zbytek nás nezajímá kvůli výkonu
+    if (foundRows >= 20) return false;
+
     const $row = $(row);
     
     // Find ISIN from link
@@ -143,6 +156,11 @@ async function scrapeETFListFromGuidePage(guideUrl) {
     // If no ISIN, it's not an ETF row
     if (!isin) return;
     
+    // Zabráníme přidání duplicit, pokud by tabulka obsahovala zdvojené řádky
+    if (seenIsins.has(isin)) return;
+    seenIsins.add(isin);
+    foundRows++;
+    
     const cells = $row.find('td');
     if (cells.length < 3) return;
 
@@ -154,10 +172,24 @@ async function scrapeETFListFromGuidePage(guideUrl) {
     const cellTexts = [];
     cells.each((j, cell) => cellTexts.push($(cell).text().trim()));
 
+    // Pokusíme se extrahovat měnu rovnou z názvu nebo AUM, pokud to jde (vylepšení pro limit=all)
+    let currency = 'N/A';
+    const aumText = cellTexts[2] || '';
+    if (aumText.includes('EUR')) currency = 'EUR';
+    else if (aumText.includes('USD')) currency = 'USD';
+    else if (aumText.includes('GBP')) currency = 'GBP';
+    // Fallback: mrknout do názvu
+    if (currency === 'N/A') {
+       if (name.includes('EUR') || name.includes('(EUR)')) currency = 'EUR';
+       else if (name.includes('USD') || name.includes('(USD)')) currency = 'USD';
+       else if (name.includes('GBP') || name.includes('(GBP)')) currency = 'GBP';
+    }
+
     etfs.push({
       isin,
       name: name || 'N/A',
-      aum: cellTexts[2] ? `EUR ${cellTexts[2]}` : 'N/A',
+      currency, // Základní pokus o měnu
+      aum: aumText ? `EUR ${aumText.replace('EUR', '').trim()}` : 'N/A',
       ter: cellTexts[3] || 'N/A',
       distribution: cellTexts[4] || 'N/A',
       replication: cellTexts[6] || 'N/A',
@@ -173,13 +205,28 @@ async function scrapeETFListFromGuidePage(guideUrl) {
     return parseAum(b.aum) - parseAum(a.aum);
   });
 
-  // Take top 6
-  const top6 = etfs.slice(0, 6);
+  // Uživatel si přál maximálně 20 ETF v kategorii
+  const finalEtfs = etfs.slice(0, 20);
 
-  // Fetch details from profile pages (batched, 3 at a time)
+  const hasMore = finalEtfs.length > 6;
+  const isAll = limitAmount === 'all';
+  const targetList = isAll ? finalEtfs : finalEtfs.slice(0, 6);
+
+  // Pokud je limit === 'all', přeskočíme zdlouhavé stahování profilů, jinak stáhneme detaily pro top 6
+  if (isAll) {
+    const simplified = targetList.map(etf => ({
+      ...etf,
+      kidAvailable: 'Nedostupný (rychlé načtení)',
+      description: 'Detailní popis z profilové stránky je z výkonnostních důvodů u hromadného načítání vynechán.'
+    }));
+    setCache(cacheKey, { etfs: simplified, allEtfs: targetList, hasMore: false });
+    return { etfs: simplified, allEtfs: targetList, hasMore: false };
+  }
+
+  // Fetch details from profile pages (batched, 3 at a time) for top 6
   const detailed = [];
-  for (let i = 0; i < top6.length; i += 3) {
-    const batch = top6.slice(i, i + 3);
+  for (let i = 0; i < targetList.length; i += 3) {
+    const batch = targetList.slice(i, i + 3);
     const results = await Promise.allSettled(
       batch.map(async (etf) => {
         try {
@@ -192,10 +239,12 @@ async function scrapeETFListFromGuidePage(guideUrl) {
             ter: detail.ter || etf.ter,
             distribution: detail.distribution || etf.distribution,
             replication: detail.replication || etf.replication,
+            // Pokud detail.currency chybí, necháme tu základní z hlavní stránky
+            currency: detail.currency || etf.currency,
           };
         } catch (err) {
           console.warn(`Detail failed for ${etf.isin}: ${err.message}`);
-          return { ...etf, currency: 'N/A', kidAvailable: 'N/A', description: '' };
+          return { ...etf, kidAvailable: 'N/A', description: '' };
         }
       })
     );
@@ -204,8 +253,8 @@ async function scrapeETFListFromGuidePage(guideUrl) {
     });
   }
 
-  setCache(cacheKey, detailed);
-  return detailed;
+  setCache(cacheKey, { etfs: detailed, allEtfs: finalEtfs, hasMore });
+  return { etfs: detailed, allEtfs: finalEtfs, hasMore };
 }
 
 // ─── Scrape ETF detail from profile page ────────────────────────
@@ -321,6 +370,7 @@ app.get('/api/categories', async (req, res) => {
 app.get('/api/etfs', async (req, res) => {
   try {
     const guideUrl = req.query.url;
+    const limit = req.query.limit || '6';
     if (!guideUrl) {
       return res.status(400).json({ success: false, error: 'Missing url parameter.' });
     }
@@ -328,8 +378,8 @@ app.get('/api/etfs', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Only justetf.com URLs allowed.' });
     }
 
-    const etfs = await scrapeETFListFromGuidePage(guideUrl);
-    res.json({ success: true, data: etfs });
+    const { etfs, allEtfs, hasMore } = await scrapeETFListFromGuidePage(guideUrl, limit);
+    res.json({ success: true, data: etfs, allEtfs, hasMore });
   } catch (err) {
     console.error('Error fetching ETFs:', err.message);
     res.status(500).json({

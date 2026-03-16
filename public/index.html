@@ -107,10 +107,18 @@
         <!-- ETF Cards -->
         <div class="etf-cards" id="etfCards"></div>
 
+        <!-- Load All Button -->
+        <div id="loadAllContainer" style="display:none; text-align: center; margin: 24px 0;">
+          <button class="btn-primary" id="loadAllBtn" style="padding: 10px 20px; font-size: 1rem; border-radius: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px; vertical-align: middle;"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>
+            Načíst všechny dostupné ETF
+          </button>
+        </div>
+
         <!-- Summary Table -->
         <div class="summary-table-wrap" id="summaryTableWrap" style="display:none">
           <div class="summary-table-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <h3>Souhrnná tabulka</h3>
+            <h3 id="summaryTableTitle">Souhrnná tabulka (Všechny ETF v kategorii)</h3>
             <button class="btn-primary" id="exportCsvBtn" style="padding: 6px 12px; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Export CSV

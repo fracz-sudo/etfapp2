@@ -10,6 +10,8 @@ const resultsError = document.getElementById('resultsError');
 const resultsErrorText = document.getElementById('resultsErrorText');
 const retryResults = document.getElementById('retryResults');
 const etfCards = document.getElementById('etfCards');
+const loadAllContainer = document.getElementById('loadAllContainer');
+const loadAllBtn = document.getElementById('loadAllBtn');
 const summaryTableWrap = document.getElementById('summaryTableWrap');
 const summaryTableBody = document.getElementById('summaryTableBody');
 
@@ -26,6 +28,11 @@ document.addEventListener('DOMContentLoaded', loadCategories);
 retryResults.addEventListener('click', () => {
   if (currentCategoryUrl) loadETFs(currentCategoryUrl, currentCategoryName);
 });
+if (loadAllBtn) {
+  loadAllBtn.addEventListener('click', () => {
+    if (currentCategoryUrl) loadETFs(currentCategoryUrl, currentCategoryName, true);
+  });
+}
 backBtn.addEventListener('click', showCategories);
 clearCacheBtn.addEventListener('click', clearCache);
 if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportToCsv);
@@ -107,20 +114,25 @@ function renderCategories(categories) {
 }
 
 // ─── Load ETFs for Category ─────────────────────────────────────
-async function loadETFs(url, name) {
+async function loadETFs(url, name, isLoadAll = false) {
   categoriesSection.style.display = 'none';
   resultsSection.style.display = 'block';
 
   resultsTitle.textContent = name;
-  resultsSubtitle.textContent = 'Top 6 ETF fondů dle AUM';
+  resultsSubtitle.textContent = isLoadAll ? 'Všechny dostupné ETF fondy dle AUM' : 'Top 6 ETF fondů dle AUM';
 
   resultsLoading.style.display = 'flex';
   resultsError.style.display = 'none';
   etfCards.innerHTML = '';
   summaryTableWrap.style.display = 'none';
+  if (loadAllContainer) loadAllContainer.style.display = 'none';
 
   try {
-    const res = await fetch(`/api/etfs?url=${encodeURIComponent(url)}`);
+    const fetchUrl = isLoadAll 
+      ? `/api/etfs?url=${encodeURIComponent(url)}&limit=all` 
+      : `/api/etfs?url=${encodeURIComponent(url)}`;
+      
+    const res = await fetch(fetchUrl);
     const json = await res.json();
 
     if (!json.success) throw new Error(json.error || 'Neznámá chyba');
@@ -136,8 +148,13 @@ async function loadETFs(url, name) {
       return;
     }
 
-    currentEtfs = json.data;
-    renderETFs(json.data);
+    currentEtfs = json.allEtfs || json.data;
+    renderETFs(json.data, json.allEtfs);
+
+    // Show or hide "Load All" button
+    if (json.hasMore && !isLoadAll && loadAllContainer) {
+      loadAllContainer.style.display = 'block';
+    }
   } catch (err) {
     resultsLoading.style.display = 'none';
     resultsError.style.display = 'flex';
@@ -146,7 +163,7 @@ async function loadETFs(url, name) {
 }
 
 // ─── Render ETF Cards ───────────────────────────────────────────
-function renderETFs(etfs) {
+function renderETFs(etfs, allEtfs) {
   resultsLoading.style.display = 'none';
   etfCards.innerHTML = '';
 
@@ -202,7 +219,7 @@ function renderETFs(etfs) {
     etfCards.appendChild(card);
   });
 
-  renderSummaryTable(etfs);
+  renderSummaryTable(allEtfs || etfs);
 }
 
 // ─── Summary Table ──────────────────────────────────────────────
